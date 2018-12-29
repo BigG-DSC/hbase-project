@@ -6,6 +6,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import java.io.*;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Scanner;
 
 
 public class HBaseScrabble {
@@ -26,12 +27,31 @@ public class HBaseScrabble {
     }
 
     public void createTable() throws IOException {
-        //TO IMPLEMENT
-        System.exit(-1);
+        byte[] TABLE = Bytes.toBytes("ScrabbleGames");
+        HTableDescriptor table = new HTableDescriptor(TableName.valueOf(TABLE));
+
+        try {
+            this.hBaseAdmin.disableTable("ScrabbleGames"); // disable the table
+            this.hBaseAdmin.deleteTable("ScrabbleGames");  // Delete the table
+            System.out.println("Deleted previous ScrabbledGames table version");
+        } catch (Exception e) {
+        }
+
+        File file = new File("data/scrabble_games.csv");
+        Scanner fileReader = new Scanner(file);
+
+        String header = fileReader.nextLine();
+        List<String> columns = Arrays.asList(header.split(","));
+
+        for (String s: columns) {
+            table.addFamily(new HColumnDescriptor(Bytes.toBytes(s.toUpperCase())));
+        }
+
+        this.hBaseAdmin.createTable(table);
     }
 
     public void loadTable(String folder)throws IOException{
-        //TO IMPLEMENT
+        System.out.println("Meisters! You need to implement this function!");
         System.exit(-1);
     }
 
