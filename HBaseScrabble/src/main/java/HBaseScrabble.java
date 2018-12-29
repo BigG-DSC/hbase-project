@@ -26,6 +26,7 @@ public class HBaseScrabble {
         this.hBaseAdmin = new HBaseAdmin(config);
     }
 
+    // TODO: The column families are NOT that right. This should be changed
     public void createTable() throws IOException {
         byte[] TABLE = Bytes.toBytes("ScrabbleGames");
         HTableDescriptor table = new HTableDescriptor(TableName.valueOf(TABLE));
@@ -50,9 +51,33 @@ public class HBaseScrabble {
         this.hBaseAdmin.createTable(table);
     }
 
-    public void loadTable(String folder)throws IOException{
-        System.out.println("Meisters! You need to implement this function!");
-        System.exit(-1);
+    // TODO: LOADING THE TABLE ROW-BY-ROW IS INEFFICIENT. CAN WE DO SOMETHING DIFFERENT?
+    // It takes 15 minutes
+    public void loadTable()throws IOException {
+        HTable table = new HTable(config, "ScrabbleGames");
+
+        File file = new File("data/scrabble_games.csv");
+        Scanner fileReader = new Scanner(file);
+        String header = fileReader.nextLine();
+        List<String> columns = Arrays.asList(header.split(","));
+
+        int rowId = 1;
+        while (fileReader.hasNext()) {
+            Put p = new Put(Bytes.toBytes("row" + rowId));
+
+            String line = fileReader.nextLine();
+            List<String> cells = Arrays.asList(line.split(","));
+            for (int i = 0; i < columns.size(); i++) {
+                p.add(Bytes.toBytes(columns.get(i).toUpperCase()), Bytes.toBytes(columns.get(i).toUpperCase()), Bytes.toBytes(cells.get(i)));
+            }
+
+            table.put(p);
+            rowId++;
+
+            if (rowId%100000.0 == 0) {
+                System.out.println("Loaded 100000 Records");
+            }
+        }
     }
 
     /**
@@ -71,7 +96,19 @@ public class HBaseScrabble {
         return key;
     }
 
+    public void query0() throws IOException {
+        HTable table = new HTable(config, "ScrabbleGames");
 
+        Scan scan = new Scan();
+        ResultScanner rs = table.getScanner(scan);
+        Result res = rs.next();
+
+        // print only the first 3 rows
+        for (int i = 0; i < 3; i++) {
+            System.out.println(Bytes.toString(res.getValue(Bytes.toBytes("GAMEID"), Bytes.toBytes("GAMEID"))));
+            res = rs.next();
+        }
+    }
 
     public List<String> query1(String tourneyid, String winnername) throws IOException {
         //TO IMPLEMENT
@@ -107,15 +144,20 @@ public class HBaseScrabble {
             hBaseScrabble.createTable();
         }
         else if(args[1].toUpperCase().equals("LOADTABLE")){
-            if(args.length!=3){
-                System.out.println("Error: 1) ZK_HOST:ZK_PORT, 2)action [createTables, loadTables], 3)csvsFolder");
-                System.exit(-1);
-            }
-            else if(!(new File(args[2])).isDirectory()){
-                System.out.println("Error: Folder "+args[2]+" does not exist.");
-                System.exit(-2);
-            }
-            hBaseScrabble.loadTable(args[2]);
+
+            //if(args.length!=3){
+            //    System.out.println("Error: 1) ZK_HOST:ZK_PORT, 2)action [createTables, loadTables], 3)csvsFolder");
+            //    System.exit(-1);
+            //}
+            //else if(!(new File(args[2])).isDirectory()){
+            //    System.out.println("Error: Folder "+args[2]+" does not exist.");
+            //    System.exit(-2);
+            //}
+            //hBaseScrabble.loadTable(args[2]);
+            hBaseScrabble.loadTable();
+        }
+        else if(args[1].toUpperCase().equals("QUERY0")){
+            hBaseScrabble.query0();
         }
         else if(args[1].toUpperCase().equals("QUERY1")){
             if(args.length!=4){
