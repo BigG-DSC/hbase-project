@@ -4,6 +4,7 @@ import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.*;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
@@ -26,7 +27,6 @@ public class HBaseScrabble {
         this.hBaseAdmin = new HBaseAdmin(config);
     }
 
-    // TODO: The column families are NOT that right. This should be changed
     public void createTable() throws IOException {
         byte[] TABLE = Bytes.toBytes("ScrabbleGames");
         HTableDescriptor table = new HTableDescriptor(TableName.valueOf(TABLE));
@@ -37,6 +37,9 @@ public class HBaseScrabble {
             System.out.println("Deleted previous ScrabbledGames table version");
         } catch (Exception e) {
         }
+
+        // TODO: I think we can hardcode the schema since the function does not require a filepath argument
+        // no need to read file
 
         File file = new File("data/scrabble_games.csv");
         Scanner fileReader = new Scanner(file);
@@ -51,33 +54,51 @@ public class HBaseScrabble {
         this.hBaseAdmin.createTable(table);
     }
 
-    // TODO: LOADING THE TABLE ROW-BY-ROW IS INEFFICIENT. CAN WE DO SOMETHING DIFFERENT?
-    // It takes 15 minutes
-    public void loadTable()throws IOException {
+    public void loadTable(String folder)throws IOException{
+
+        // Hardcoded file path, remove later
+        String filePath = "data/scrabble_games.csv";
+
+        // TODO: uncomment later to make use of CLI
+        //String filePath = folder + "/" + "scrabble_games.csv";
+
         HTable table = new HTable(config, "ScrabbleGames");
 
-        File file = new File("data/scrabble_games.csv");
-        Scanner fileReader = new Scanner(file);
-        String header = fileReader.nextLine();
+        String line;
+        BufferedReader br = new BufferedReader(new FileReader(filePath));
+
+        String header = br.readLine();
         List<String> columns = Arrays.asList(header.split(","));
 
+        List<Put> putList = new ArrayList<Put>();
+
         int rowId = 1;
-        while (fileReader.hasNext()) {
+        while ((line = br.readLine()) != null) {
             Put p = new Put(Bytes.toBytes("row" + rowId));
 
-            String line = fileReader.nextLine();
             List<String> cells = Arrays.asList(line.split(","));
             for (int i = 0; i < columns.size(); i++) {
                 p.add(Bytes.toBytes(columns.get(i).toUpperCase()), Bytes.toBytes(columns.get(i).toUpperCase()), Bytes.toBytes(cells.get(i)));
             }
 
-            table.put(p);
-            rowId++;
+            putList.add(p);
 
             if (rowId%100000.0 == 0) {
+                // write in batch to HBase makes it a bit faster, however not sure how big batches can be
+                // taking all data at once leads to heap size exception
+                table.put(putList);
+                putList.clear();
                 System.out.println("Loaded 100000 Records");
             }
+
+            rowId++;
         }
+
+        System.out.println("Last Line: " + rowId);
+
+        table.put(putList);
+        System.out.println("Put rest: " + putList.size());
+
     }
 
     /**
@@ -96,18 +117,21 @@ public class HBaseScrabble {
         return key;
     }
 
-    public void query0() throws IOException {
-        HTable table = new HTable(config, "ScrabbleGames");
 
+    public void countRecords() throws IOException {
+        HTable table = new HTable(config, "ScrabbleGames");
         Scan scan = new Scan();
         ResultScanner rs = table.getScanner(scan);
         Result res = rs.next();
 
-        // print only the first 3 rows
-        for (int i = 0; i < 3; i++) {
-            System.out.println(Bytes.toString(res.getValue(Bytes.toBytes("GAMEID"), Bytes.toBytes("GAMEID"))));
+        int nRows = 0;
+
+        while (res!=null && !res.isEmpty()){
+            nRows++;
             res = rs.next();
         }
+
+        System.out.println("Total rows in table: " + nRows);
     }
 
     public List<String> query1(String tourneyid, String winnername) throws IOException {
@@ -144,20 +168,17 @@ public class HBaseScrabble {
             hBaseScrabble.createTable();
         }
         else if(args[1].toUpperCase().equals("LOADTABLE")){
-
-            //if(args.length!=3){
-            //    System.out.println("Error: 1) ZK_HOST:ZK_PORT, 2)action [createTables, loadTables], 3)csvsFolder");
-            //    System.exit(-1);
-            //}
-            //else if(!(new File(args[2])).isDirectory()){
-            //    System.out.println("Error: Folder "+args[2]+" does not exist.");
-            //    System.exit(-2);
-            //}
-            //hBaseScrabble.loadTable(args[2]);
-            hBaseScrabble.loadTable();
-        }
-        else if(args[1].toUpperCase().equals("QUERY0")){
-            hBaseScrabble.query0();
+            if(args.length!=3){
+                System.out.println("Error: 1) ZK_HOST:ZK_PORT, 2)action [createTables, loadTables], 3)csvsFolder");
+                System.exit(-1);
+            }
+            else if(!(new File(args[2])).isDirectory()){
+                System.out.println("Error: Folder "+args[2]+" does not exist.");
+                System.exit(-2);
+            }
+            hBaseScrabble.loadTable(args[2]);
+            // print total number of records
+            hBaseScrabble.countRecords();
         }
         else if(args[1].toUpperCase().equals("QUERY1")){
             if(args.length!=4){
