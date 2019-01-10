@@ -1,6 +1,8 @@
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.filter.CompareFilter;
+import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.*;
@@ -8,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Scanner;
+import java.util.logging.Filter;
 
 
 public class HBaseScrabble {
@@ -31,6 +34,10 @@ public class HBaseScrabble {
         byte[] TABLE = Bytes.toBytes("ScrabbleGames");
         HTableDescriptor table = new HTableDescriptor(TableName.valueOf(TABLE));
 
+        byte[] gInfo = Bytes.toBytes("Game");
+        byte[] wInfo = Bytes.toBytes("Winner");
+        byte[] lInfo = Bytes.toBytes("Loser");
+
         try {
             this.hBaseAdmin.disableTable("ScrabbleGames"); // disable the table
             this.hBaseAdmin.deleteTable("ScrabbleGames");  // Delete the table
@@ -38,35 +45,43 @@ public class HBaseScrabble {
         } catch (Exception e) {
         }
 
-        // TODO: I think we can hardcode the schema since the function does not require a filepath argument
-        // no need to read file
+        HColumnDescriptor gFamily = new HColumnDescriptor(gInfo);
+        gFamily.setMaxVersions(10); // Default is 3.
+        HColumnDescriptor wFamily = new HColumnDescriptor(wInfo);
+        wFamily.setMaxVersions(10); // Default is 3.
+        HColumnDescriptor lFamily = new HColumnDescriptor(lInfo);
+        lFamily.setMaxVersions(10); // Default is 3.
 
-        File file = new File("data/scrabble_games.csv");
-        Scanner fileReader = new Scanner(file);
-
-        String header = fileReader.nextLine();
-        List<String> columns = Arrays.asList(header.split(","));
-
-        for (String s: columns) {
-            table.addFamily(new HColumnDescriptor(Bytes.toBytes(s.toUpperCase())));
-        }
+        table.addFamily(gFamily);
+        table.addFamily(wFamily);
+        table.addFamily(lFamily);
 
         this.hBaseAdmin.createTable(table);
+
+        System.out.println((byte)-255);
+
     }
 
     public void loadTable(String folder)throws IOException{
 
+        byte[] gInfo = Bytes.toBytes("Game");
+        byte[] wInfo = Bytes.toBytes("Winner");
+        byte[] lInfo = Bytes.toBytes("Loser");
+
         // Hardcoded file path, remove later
-        String filePath = "data/scrabble_games.csv";
+        // String filePath = "data/scrabble_games.csv";
 
         // TODO: uncomment later to make use of CLI
-        //String filePath = folder + "/" + "scrabble_games.csv";
+        String filePath = folder + "/" + "scrabble_games.csv";
 
         HTable table = new HTable(config, "ScrabbleGames");
+
+        int[] keyTable = {1, 0};
 
         String line;
         BufferedReader br = new BufferedReader(new FileReader(filePath));
 
+        // read header
         String header = br.readLine();
         List<String> columns = Arrays.asList(header.split(","));
 
@@ -74,12 +89,36 @@ public class HBaseScrabble {
 
         int rowId = 1;
         while ((line = br.readLine()) != null) {
-            Put p = new Put(Bytes.toBytes("row" + rowId));
 
+            String[] values = line.split(",");
+
+            Put p = new Put(getKey(values, keyTable));
             List<String> cells = Arrays.asList(line.split(","));
-            for (int i = 0; i < columns.size(); i++) {
-                p.add(Bytes.toBytes(columns.get(i).toUpperCase()), Bytes.toBytes(columns.get(i).toUpperCase()), Bytes.toBytes(cells.get(i)));
-            }
+
+            //Game info
+            p.add(gInfo, Bytes.toBytes("gameid"), Bytes.toBytes(cells.get(0)));
+            p.add(gInfo, Bytes.toBytes("tourneyid"), Bytes.toBytes(cells.get(1)));
+            p.add(gInfo, Bytes.toBytes("tie"), Bytes.toBytes(cells.get(2)));
+            p.add(gInfo, Bytes.toBytes("round"), Bytes.toBytes(cells.get(15)));
+            p.add(gInfo, Bytes.toBytes("division"), Bytes.toBytes(cells.get(16)));
+            p.add(gInfo, Bytes.toBytes("date"), Bytes.toBytes(cells.get(17)));
+            p.add(gInfo, Bytes.toBytes("lexicon"), Bytes.toBytes(cells.get(18)));
+
+            //Winner info
+            p.add(wInfo, Bytes.toBytes("id"), Bytes.toBytes(cells.get(3)));
+            p.add(wInfo, Bytes.toBytes("name"), Bytes.toBytes(cells.get(4)));
+            p.add(wInfo, Bytes.toBytes("score"), Bytes.toBytes(cells.get(5)));
+            p.add(wInfo, Bytes.toBytes("oldrating"), Bytes.toBytes(cells.get(6)));
+            p.add(wInfo, Bytes.toBytes("newrating"), Bytes.toBytes(cells.get(7)));
+            p.add(wInfo, Bytes.toBytes("pos"), Bytes.toBytes(cells.get(8)));
+
+            //Winner info
+            p.add(lInfo, Bytes.toBytes("id"), Bytes.toBytes(cells.get(9)));
+            p.add(lInfo, Bytes.toBytes("name"), Bytes.toBytes(cells.get(10)));
+            p.add(lInfo, Bytes.toBytes("score"), Bytes.toBytes(cells.get(11)));
+            p.add(lInfo, Bytes.toBytes("oldrating"), Bytes.toBytes(cells.get(12)));
+            p.add(lInfo, Bytes.toBytes("newrating"), Bytes.toBytes(cells.get(13)));
+            p.add(lInfo, Bytes.toBytes("pos"), Bytes.toBytes(cells.get(14)));
 
             putList.add(p);
 
@@ -110,7 +149,7 @@ public class HBaseScrabble {
     private byte[] getKey(String[] values, int[] keyTable) {
         String keyString = "";
         for (int keyId : keyTable){
-            keyString += values[keyId];
+            keyString += String.format("%010d", Integer.parseInt(values[keyId]));
         }
         byte[] key = Bytes.toBytes(keyString);
 
@@ -118,6 +157,7 @@ public class HBaseScrabble {
     }
 
 
+    // Counts total number of records loaded into the table
     public void countRecords() throws IOException {
         HTable table = new HTable(config, "ScrabbleGames");
         Scan scan = new Scan();
@@ -134,11 +174,46 @@ public class HBaseScrabble {
         System.out.println("Total rows in table: " + nRows);
     }
 
-    public List<String> query1(String tourneyid, String winnername) throws IOException {
-        //TO IMPLEMENT
-        System.exit(-1);
-        return null;
+    // TODO: Remove in the end, was just for testing
+    private void get() throws IOException {
+        byte[] cf = Bytes.toBytes("Winner");
+        byte[] column = Bytes.toBytes("name");
+        HTable table = new HTable(config, "ScrabbleGames");
 
+        byte[] key = Bytes.toBytes("00000000010000000001");
+
+        Get get = new Get(key);
+        get.addColumn(cf,column);
+        Result result = table.get(get);
+
+        String lastLogin = Bytes.toString(result.getValue(cf, column));
+        System.out.println(lastLogin);
+    }
+
+    public List<String> query1(String tourneyid, String winnername) throws IOException {
+        HTable table = new HTable(config, "ScrabbleGames");
+
+        byte[] startKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(tourneyid)) + "0000000000");
+        byte[] endKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(tourneyid)) + "9999999999");
+        Scan scan = new Scan(startKey, endKey);
+
+        SingleColumnValueFilter f = new SingleColumnValueFilter(Bytes.toBytes("Winner"),
+                Bytes.toBytes("name"),
+                CompareFilter.CompareOp.EQUAL,Bytes.toBytes(winnername));
+
+        ArrayList<String> queryResult = new ArrayList<>();
+
+        scan.setFilter(f);
+        ResultScanner rs = table.getScanner(scan);
+
+        Result result = rs.next();
+        while (result!=null && !result.isEmpty()){
+            String key = Bytes.toString(result.getRow());
+            queryResult.add(Bytes.toString(result.getValue(Bytes.toBytes("Loser"),Bytes.toBytes("id"))));
+            result = rs.next();
+        }
+
+        return queryResult;
     }
 
     public List<String> query2(String firsttourneyid, String lasttourneyid) throws IOException {
@@ -210,6 +285,14 @@ public class HBaseScrabble {
             List<String> games = hBaseScrabble.query3(args[2]);
             System.out.println("There are "+games.size()+" that ends in tie in tourneyid "+args[2]+" .");
             System.out.println("The list of games is: "+Arrays.toString(games.toArray(new String[games.size()])));
+        }
+        else if(args[1].toUpperCase().equals("COUNTRECORDS")) {
+            // print total number of records
+            hBaseScrabble.countRecords();
+        }
+        else if(args[1].toUpperCase().equals("GET")) {
+            // print total number of records
+            hBaseScrabble.get();
         }
         else{
             System.out.println("Error: \n1)ZK_HOST:ZK_PORT, \n2)action [createTable, loadTable, query1, query2, query3], \n3)Extra parameters for loadTables and queries:\n" +
