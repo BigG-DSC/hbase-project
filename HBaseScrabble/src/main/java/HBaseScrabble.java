@@ -2,6 +2,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.CompareFilter;
+import org.apache.hadoop.hbase.filter.PrefixFilter;
 import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
 import org.apache.hadoop.hbase.util.Bytes;
 
@@ -25,6 +26,16 @@ public class HBaseScrabble {
         config.set("hbase.zookeeper.property.clientPort", zkHost.split(":")[1]);
         HBaseConfiguration.addHbaseResources(config);
         this.hBaseAdmin = new HBaseAdmin(config);
+    }
+
+
+    private void merge() throws IOException, InterruptedException {
+        byte[] TABLE = Bytes.toBytes("ScrabbleGames");
+        List<HRegionInfo> tableHRs = null;
+        while ((tableHRs = hBaseAdmin.getTableRegions(TABLE)).size()!=1){
+            hBaseAdmin.mergeRegions(tableHRs.get(0).getEncodedNameAsBytes(),tableHRs.get(1).getEncodedNameAsBytes(),true);
+            wait(20);
+        }
     }
 
     public void createTable() throws IOException {
@@ -56,7 +67,7 @@ public class HBaseScrabble {
         this.hBaseAdmin.createTable(table);
     }
 
-    public void loadTable(String folder)throws IOException{
+    public void loadTable(String folder) throws IOException, InterruptedException {
 
         byte[] gInfo = Bytes.toBytes("Game");
         byte[] wInfo = Bytes.toBytes("Winner");
@@ -106,7 +117,7 @@ public class HBaseScrabble {
             p.add(wInfo, Bytes.toBytes("newrating"), Bytes.toBytes(cells.get(7)));
             p.add(wInfo, Bytes.toBytes("pos"), Bytes.toBytes(cells.get(8)));
 
-            //Winner info
+            //Loser info
             p.add(lInfo, Bytes.toBytes("id"), Bytes.toBytes(cells.get(9)));
             p.add(lInfo, Bytes.toBytes("name"), Bytes.toBytes(cells.get(10)));
             p.add(lInfo, Bytes.toBytes("score"), Bytes.toBytes(cells.get(11)));
@@ -226,13 +237,16 @@ public class HBaseScrabble {
             String temp = Bytes.toString(result.getValue(Bytes.toBytes("Winner"),Bytes.toBytes("id")));
             String tempTourneyid = Bytes.toString(result.getValue(Bytes.toBytes("Game"),Bytes.toBytes("tourneyid")));
 
+            // check if winner id appeared once already and if it was a different tourney
             if (appearedOnce.containsKey(temp) && !appearedOnce.get(temp).equals(tempTourneyid) && !queryResult.contains(temp)) {
                 queryResult.add(temp);
             }
+            // if he didn't appear yet and is not in the results, add the winner id to the appearedOnce data structure
             else if (!appearedOnce.containsKey(temp) && !queryResult.contains(temp)) {
                 appearedOnce.put(temp, tempTourneyid);
             }
 
+            // do the same for the loser id
             temp = Bytes.toString(result.getValue(Bytes.toBytes("Loser"),Bytes.toBytes("id")));
 
             if (appearedOnce.containsKey(temp) && !appearedOnce.get(temp).equals(tempTourneyid) && !queryResult.contains(temp)) {
@@ -275,7 +289,7 @@ public class HBaseScrabble {
     }
 
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws IOException, InterruptedException {
         if(args.length<2){
             System.out.println("Error: \n1)ZK_HOST:ZK_PORT, \n2)action [createTable, loadTable, query1, query2, query3], \n3)Extra parameters for loadTables and queries:\n" +
                     "\ta) If loadTable: csvsFolder.\n " +
@@ -304,6 +318,8 @@ public class HBaseScrabble {
             hBaseScrabble.loadTable(args[2]);
             double estimatedTime = (System.nanoTime() - startTime)/1000000000.0;
             System.out.println("Query took " + estimatedTime + " seconds.");
+            //hBaseScrabble.merge();
+            //System.out.println("Merged automatically split regions.");
         }
         else if(args[1].toUpperCase().equals("QUERY1")){
             if(args.length!=4){
