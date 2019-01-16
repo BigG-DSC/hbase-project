@@ -38,6 +38,8 @@ public class HBaseScrabble {
     /**
      * Initializes and creates the HTable with name 'ScrabbleGames" with its schema.
      *
+     * If the table exists already, it is being disabled and deleted to be reinitialized.
+     *
      * Columns are grouped logically into column families, so these column families
      * are rather general. Since we only have three queries, only optimizing for these
      * queries would be bad practice if the queries were ever to be extended.
@@ -78,6 +80,19 @@ public class HBaseScrabble {
         this.hBaseAdmin.createTable(table);
     }
 
+    /**
+     * Loads data from the specified folder into the previously defined table "ScrabbleGames".
+     *
+     * The row key being used is a 20 character string, where TourneyID and GameID are being padded with leading zeros
+     * to extend them to 20 character length. For example, 00000421530000000123 would be Game 123 in Tourney 42153.
+     *
+     * Rows are read one by one from the file but the puts are being loaded into the HBase table in batches of 100.000.
+     *
+     * @param folder containing the input data with the name "scrabble_games.csv". It requires the data folder to be in
+     *               in the root folder of the project at the same level as the src folder.
+     * @throws IOException
+     * @throws InterruptedException
+     */
     public void loadTable(String folder) throws IOException, InterruptedException {
 
         byte[] gInfo = Bytes.toBytes("Game");
@@ -151,7 +166,7 @@ public class HBaseScrabble {
     }
 
     /**
-     * This method generates the key
+     * This method generates the key.
      *
      * @param values   The value of each column
      * @param keyTable The position of each value that is required to create the key in the array of values.
@@ -169,7 +184,7 @@ public class HBaseScrabble {
 
 
     /**
-     * Counts total number of records loaded into the table
+     * Counts total number of records loaded into the "ScrabbleGames" table.
      */
     public void countRecords() throws IOException {
         HTable table = new HTable(config, "ScrabbleGames");
@@ -214,48 +229,6 @@ public class HBaseScrabble {
     }
 
     public List<String> query2(String firsttourneyid, String lasttourneyid) throws IOException {
-        HTable table = new HTable(config, "ScrabbleGames");
-
-        byte[] startKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(firsttourneyid)) + "0000000000");
-        byte[] endKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(lasttourneyid)) + "0000000000");
-        Scan scan = new Scan(startKey, endKey);
-
-        ArrayList<String> queryResult = new ArrayList<>();
-        HashMap<String, String> appearedOnce = new HashMap<>();
-
-        ResultScanner rs = table.getScanner(scan);
-
-        Result result = rs.next();
-        while (result != null && !result.isEmpty()) {
-            //String key = Bytes.toString(result.getRow());
-            String temp = Bytes.toString(result.getValue(Bytes.toBytes("Winner"), Bytes.toBytes("id")));
-            String tempTourneyid = Bytes.toString(result.getValue(Bytes.toBytes("Game"), Bytes.toBytes("tourneyid")));
-
-            // check if winner id appeared once already and if it was a different tourney
-            if (appearedOnce.containsKey(temp) && !appearedOnce.get(temp).equals(tempTourneyid) && !queryResult.contains(temp)) {
-                queryResult.add(temp);
-            }
-            // if he didn't appear yet and is not in the results, add the winner id to the appearedOnce data structure
-            else if (!appearedOnce.containsKey(temp) && !queryResult.contains(temp)) {
-                appearedOnce.put(temp, tempTourneyid);
-            }
-
-            // do the same for the loser id
-            temp = Bytes.toString(result.getValue(Bytes.toBytes("Loser"), Bytes.toBytes("id")));
-
-            if (appearedOnce.containsKey(temp) && !appearedOnce.get(temp).equals(tempTourneyid) && !queryResult.contains(temp)) {
-                queryResult.add(temp);
-            } else if (!appearedOnce.containsKey(temp) && !queryResult.contains(temp)) {
-                appearedOnce.put(temp, tempTourneyid);
-            }
-
-            result = rs.next();
-        }
-
-        return queryResult;
-    }
-
-    public List<String> query2b(String firsttourneyid, String lasttourneyid) throws IOException {
         HTable table = new HTable(config, "ScrabbleGames");
 
         byte[] startKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(firsttourneyid)) + "0000000000");
@@ -417,18 +390,6 @@ public class HBaseScrabble {
             System.out.println("There are " + playerNames.size() + " players that participates in more than one tourney between tourneyid " + args[2] + " and tourneyid " + args[3] + " .");
             System.out.println("The list of players is: " + Arrays.toString(playerNames.toArray(new String[playerNames.size()])));
             System.out.println("Query took " + estimatedTime + " seconds.");
-        } else if (args[1].toUpperCase().equals("QUERY2B")) {
-            if (args.length != 4) {
-                System.out.println("Error: 1) ZK_HOST:ZK_PORT, 2)query2, " +
-                        "3) firsttourneyid 4) lasttourneyid");
-                System.exit(-1);
-            }
-            long startTime = System.nanoTime();
-            List<String> playerNames = hBaseScrabble.query2b(args[2], args[3]);
-            double estimatedTime = (System.nanoTime() - startTime) / 1000000000.0;
-            System.out.println("There are " + playerNames.size() + " players that participates in more than one tourney between tourneyid " + args[2] + " and tourneyid " + args[3] + " .");
-            System.out.println("The list of players is: " + Arrays.toString(playerNames.toArray(new String[playerNames.size()])));
-            System.out.println("Query took " + estimatedTime + " seconds.");
         } else if (args[1].toUpperCase().equals("QUERY3")) {
             if (args.length != 3) {
                 System.out.println("Error: 1) ZK_HOST:ZK_PORT, 2) query3, " +
@@ -454,6 +415,5 @@ public class HBaseScrabble {
         }
 
     }
-
 
 }
