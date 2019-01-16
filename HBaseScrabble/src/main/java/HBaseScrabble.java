@@ -78,8 +78,8 @@ public class HBaseScrabble {
         // String filePath = "data/scrabble_games.csv";
 
         // TODO: uncomment later to make use of CLI
-        //String filePath = folder + "/" + "scrabble_games.csv";
-        String filePath = folder + "/" + "test_query2.csv";
+        String filePath = folder + "/" + "scrabble_games.csv";
+        //String filePath = folder + "/" + "test_query2.csv";
 
         HTable table = new HTable(config, "ScrabbleGames");
 
@@ -273,6 +273,7 @@ public class HBaseScrabble {
         byte[] endKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(lasttourneyid)) + "0000000000");
         Scan scan = new Scan(startKey, endKey);
 
+        Set<String> finalResult = new HashSet<>();
         Set<String> queryResult = new HashSet<>();
         Set<String> appearedOnce = new HashSet<>();
         Set<String> blacklist = new HashSet<>();
@@ -290,45 +291,55 @@ public class HBaseScrabble {
             if (!currentTourney.equals(temp)) {
 
                 if (!firsttourneyid.equals(currentTourney)) {
-                    queryResult.removeAll(appearedOnce);
+                    // The retain takes the interception of the lists
+                    finalResult.retainAll(queryResult);
                 }
 
-                appearedOnce = new HashSet<>();
+                finalResult.addAll(queryResult);
+                queryResult.clear();
+                appearedOnce.clear();
                 currentTourney = temp;
             }
 
             String playerId = Bytes.toString(result.getValue(Bytes.toBytes("Winner"), Bytes.toBytes("name")));
 
             if (appearedOnce.contains(playerId)) {
-                if (firsttourneyid.equals(currentTourney)) {
-                    queryResult.add(playerId);
-                }
-
+                queryResult.add(playerId);
                 appearedOnce.remove(playerId);
             }
             else {
-                appearedOnce.add(playerId);
+                if (!queryResult.contains(playerId))
+                    appearedOnce.add(playerId);
             }
 
             playerId = Bytes.toString(result.getValue(Bytes.toBytes("Loser"), Bytes.toBytes("name")));
 
             if (appearedOnce.contains(playerId)) {
-                if (firsttourneyid.equals(currentTourney)) {
-                    queryResult.add(playerId);
-                }
-
+                queryResult.add(playerId);
                 appearedOnce.remove(playerId);
             }
             else {
-                appearedOnce.add(playerId);
+                if (!queryResult.contains(playerId))
+                    appearedOnce.add(playerId);
             }
 
             result = rs.next();
         }
 
-        queryResult.removeAll(appearedOnce);
+        appearedOnce.clear();
+         // here the problem is that when you take the intersection of the lists in the interval 1 to 2
+        // the while cycle exit before updating the finalresult lists (It does only one cycle). Since it is empty this list, the
+        // intersection will give an empty set. In the interval 1 to 2 so It is en error to do it (the intersection), we should just
+        // add the results to finalresults. It is not an error for an interval bigger than 1 to 2 because the finalresults will
+        // be updated in the while loop (at least it do two cycles) and in the case of an empty finalresults list
+        // means that immediately in the first tourney no-one played more than two games, so It is right to have
+        // an empty result at the end.
+        if (Integer.parseInt(lasttourneyid) - Integer.parseInt(firsttourneyid) < 2)
+            finalResult.addAll(queryResult);
+        else
+            finalResult.retainAll(queryResult);
 
-        return new ArrayList<>(queryResult);
+        return new ArrayList<>(finalResult);
     }
 
     public List<String> query3(String tourneyid) throws IOException {
@@ -367,6 +378,11 @@ public class HBaseScrabble {
                     "\td) If query3: tourneyid.\n  ");
             System.exit(-1);
         }
+        //args = new String[4];
+        //args[0] = "localhost:2181";
+        //args[1] = "QUERY2B";
+        //args[2] = "1";
+        //args[3] = "3";
         HBaseScrabble hBaseScrabble = new HBaseScrabble(args[0]);
         if (args[1].toUpperCase().equals("CREATETABLE")) {
             long startTime = System.nanoTime();
