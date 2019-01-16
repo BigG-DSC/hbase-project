@@ -2,14 +2,20 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.filter.CompareFilter;
-import org.apache.hadoop.hbase.filter.PrefixFilter;
 import org.apache.hadoop.hbase.filter.SingleColumnValueFilter;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import java.io.*;
 import java.util.*;
-import java.util.logging.Filter;
 
+/**
+ * Cloud Computing and Big Data Ecosystems Design: HBase assignment
+ * Universidad Politecnica de Madrid
+ *
+ * @author Moritz Meister (moritz.meister@alumnos.upm.es, meister.mo@gmail.com)
+ * @author Gioele Bigini (gioele.bigini@gmail.com)
+ * @date 16/01/19.
+ */
 
 public class HBaseScrabble {
     private Configuration config;
@@ -29,16 +35,20 @@ public class HBaseScrabble {
         this.hBaseAdmin = new HBaseAdmin(config);
     }
 
-
-    private void merge() throws IOException, InterruptedException {
-        byte[] TABLE = Bytes.toBytes("ScrabbleGames");
-        List<HRegionInfo> tableHRs = null;
-        while ((tableHRs = hBaseAdmin.getTableRegions(TABLE)).size() != 1) {
-            hBaseAdmin.mergeRegions(tableHRs.get(0).getEncodedNameAsBytes(), tableHRs.get(1).getEncodedNameAsBytes(), true);
-            wait(20);
-        }
-    }
-
+    /**
+     * Initializes and creates the HTable with name 'ScrabbleGames" with its schema.
+     *
+     * Columns are grouped logically into column families, so these column families
+     * are rather general. Since we only have three queries, only optimizing for these
+     * queries would be bad practice if the queries were ever to be extended.
+     *
+     * Column families:
+     * 1. Game: contains all game related information
+     * 2. Winner: contains all information related to the winning player of the game
+     * 3. Loser: contains all information related to the losing player of the game
+     *
+     * @throws IOException
+     */
     public void createTable() throws IOException {
         byte[] TABLE = Bytes.toBytes("ScrabbleGames");
         HTableDescriptor table = new HTableDescriptor(TableName.valueOf(TABLE));
@@ -74,12 +84,7 @@ public class HBaseScrabble {
         byte[] wInfo = Bytes.toBytes("Winner");
         byte[] lInfo = Bytes.toBytes("Loser");
 
-        // Hardcoded file path, remove later
-        // String filePath = "data/scrabble_games.csv";
-
-        // TODO: uncomment later to make use of CLI
         String filePath = folder + "/" + "scrabble_games.csv";
-        //String filePath = folder + "/" + "test_query2.csv";
 
         HTable table = new HTable(config, "ScrabbleGames");
 
@@ -182,22 +187,6 @@ public class HBaseScrabble {
         System.out.println("Total rows in table: " + nRows);
     }
 
-    // TODO: Remove in the end, was just for testing
-    private void get() throws IOException {
-        byte[] cf = Bytes.toBytes("Winner");
-        byte[] column = Bytes.toBytes("name");
-        HTable table = new HTable(config, "ScrabbleGames");
-
-        byte[] key = Bytes.toBytes("00000000010000000001");
-
-        Get get = new Get(key);
-        get.addColumn(cf, column);
-        Result result = table.get(get);
-
-        String lastLogin = Bytes.toString(result.getValue(cf, column));
-        System.out.println(lastLogin);
-    }
-
     public List<String> query1(String tourneyid, String winnername) throws IOException {
         HTable table = new HTable(config, "ScrabbleGames");
 
@@ -276,7 +265,6 @@ public class HBaseScrabble {
         Set<String> finalResult = new HashSet<>();
         Set<String> queryResult = new HashSet<>();
         Set<String> appearedOnce = new HashSet<>();
-        Set<String> blacklist = new HashSet<>();
 
         ResultScanner rs = table.getScanner(scan);
 
@@ -301,7 +289,8 @@ public class HBaseScrabble {
                 currentTourney = temp;
             }
 
-            String playerId = Bytes.toString(result.getValue(Bytes.toBytes("Winner"), Bytes.toBytes("name")));
+            // check if WINNER appeared once or already more
+            String playerId = Bytes.toString(result.getValue(Bytes.toBytes("Winner"), Bytes.toBytes("id")));
 
             if (appearedOnce.contains(playerId)) {
                 queryResult.add(playerId);
@@ -312,7 +301,8 @@ public class HBaseScrabble {
                     appearedOnce.add(playerId);
             }
 
-            playerId = Bytes.toString(result.getValue(Bytes.toBytes("Loser"), Bytes.toBytes("name")));
+            // Do the same for LOSER
+            playerId = Bytes.toString(result.getValue(Bytes.toBytes("Loser"), Bytes.toBytes("id")));
 
             if (appearedOnce.contains(playerId)) {
                 queryResult.add(playerId);
@@ -454,9 +444,6 @@ public class HBaseScrabble {
         } else if (args[1].toUpperCase().equals("COUNTRECORDS")) {
             // print total number of records
             hBaseScrabble.countRecords();
-        } else if (args[1].toUpperCase().equals("GET")) {
-            // print total number of records
-            hBaseScrabble.get();
         } else {
             System.out.println("Error: \n1)ZK_HOST:ZK_PORT, \n2)action [createTable, loadTable, query1, query2, query3], \n3)Extra parameters for loadTables and queries:\n" +
                     "\ta) If loadTable: csvsFolder.\n " +
