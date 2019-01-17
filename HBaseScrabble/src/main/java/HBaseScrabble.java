@@ -13,8 +13,8 @@ import java.util.*;
  * Universidad Politecnica de Madrid
  *
  * @author Moritz Meister (moritz.meister@alumnos.upm.es, meister.mo@gmail.com)
- * @author Gioele Bigini (gioele.bigini@gmail.com)
- * @date 16/01/19.
+ * @author Gioele Bigini (gioele.bigini@alumnos.upm.es, gioele.bigini@gmail.com)
+ * @date 17/01/19.
  */
 
 public class HBaseScrabble {
@@ -202,22 +202,44 @@ public class HBaseScrabble {
         System.out.println("Total rows in table: " + nRows);
     }
 
+    /**
+     * Query 1: Returns all the opponents of a given Winner name in a tournament.
+     *
+     * The opponents are identified by their id.
+     * The tournaments are identified by their id.
+     *
+     * @param tourneyid  The id of the tournament.
+     * @param winnername The id of the winner name.
+     * @return The opponents list produced by the query.
+     * @throws IOException
+     */
     public List<String> query1(String tourneyid, String winnername) throws IOException {
+        // Getting reference to the table
         HTable table = new HTable(config, "ScrabbleGames");
 
+        // Setting the interval
         byte[] startKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(tourneyid)) + "0000000000");
         byte[] endKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(tourneyid)) + "9999999999");
+
+        // Scan all the records between the interval
         Scan scan = new Scan(startKey, endKey);
 
+        // Creating the filter.
+        // It means: get the rows wher the name of the winner is equal to the in the variabile "winnername"
         SingleColumnValueFilter f = new SingleColumnValueFilter(Bytes.toBytes("Winner"),
-                Bytes.toBytes("name"),
-                CompareFilter.CompareOp.EQUAL, Bytes.toBytes(winnername));
-
-        ArrayList<String> queryResult = new ArrayList<>();
-
+                                                                Bytes.toBytes("name"),
+                                                                CompareFilter.CompareOp.EQUAL,
+                                                                Bytes.toBytes(winnername));
+        // Applying the filtering
         scan.setFilter(f);
+
+        // Get the iterator with the results
         ResultScanner rs = table.getScanner(scan);
 
+        // Instantiating the list that contains all the resulting opponents
+        ArrayList<String> queryResult = new ArrayList<>();
+
+        // Add the results to the list queryResult
         Result result = rs.next();
         while (result != null && !result.isEmpty()) {
             // String key = Bytes.toString(result.getRow());
@@ -228,37 +250,57 @@ public class HBaseScrabble {
         return queryResult;
     }
 
+    /**
+     * Query 2: Returns the ids of the Winner and Loser that have participated more than once in all the
+     * tournaments between two given Tourneyids.
+     *
+     * @param firsttourneyid  The id of the first tournament.
+     * @param lasttourneyid   The id of the second tournament.
+     * @return The list containing
+     * @throws IOException
+     */
     public List<String> query2(String firsttourneyid, String lasttourneyid) throws IOException {
-        HTable table = new HTable(config, "ScrabbleGames");
-
-        byte[] startKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(firsttourneyid)) + "0000000000");
-        byte[] endKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(lasttourneyid)) + "0000000000");
-        Scan scan = new Scan(startKey, endKey);
-
-        Set<String> finalResult = new HashSet<>();
-        Set<String> queryResult = new HashSet<>();
+        // Instantiating working lists
+        Set<String> finalResult = new HashSet<>(); // outcome of the query
+        Set<String> tempResult = new HashSet<>();
         Set<String> appearedOnce = new HashSet<>();
 
+        // Getting reference to the table
+        HTable table = new HTable(config, "ScrabbleGames");
+
+        // Setting the interval
+        byte[] startKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(firsttourneyid)) + "0000000000");
+        byte[] endKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(lasttourneyid)) + "0000000000");
+
+        // Scan all the records between the interval
+        Scan scan = new Scan(startKey, endKey);
         ResultScanner rs = table.getScanner(scan);
 
+        // Workaround to let access the first IF (in the loop) to the very first tournament
         String currentTourney = "-1";
 
+        // Iterating over the results of the scan
         Result result = rs.next();
          while (result != null && !result.isEmpty()) {
             //String key = Bytes.toString(result.getRow());
-
             String temp = Bytes.toString(result.getValue(Bytes.toBytes("Game"), Bytes.toBytes("tourneyid")));
 
+            // If the currentTourneyid is different from the temp-(TourneyId)
+            // This means the Tournament changes and so:
             if (!currentTourney.equals(temp)) {
 
+                // Take the intersection of the finalResult and the tempResult
+                // When the currentTourney is not the very first one
                 if (!firsttourneyid.equals(currentTourney)) {
-                    // The retain takes the interception of the lists
-                    finalResult.retainAll(queryResult);
+                    // The retain takes the intersection of the lists
+                    finalResult.retainAll(tempResult);
                 }
 
-                finalResult.addAll(queryResult);
-                queryResult.clear();
+                // Clean the lists
+                finalResult.addAll(tempResult);
+                tempResult.clear();
                 appearedOnce.clear();
+                // Update to the current tournament
                 currentTourney = temp;
             }
 
@@ -266,11 +308,11 @@ public class HBaseScrabble {
             String playerId = Bytes.toString(result.getValue(Bytes.toBytes("Winner"), Bytes.toBytes("id")));
 
             if (appearedOnce.contains(playerId)) {
-                queryResult.add(playerId);
+                tempResult.add(playerId);
                 appearedOnce.remove(playerId);
             }
             else {
-                if (!queryResult.contains(playerId))
+                if (!tempResult.contains(playerId))
                     appearedOnce.add(playerId);
             }
 
@@ -278,11 +320,11 @@ public class HBaseScrabble {
             playerId = Bytes.toString(result.getValue(Bytes.toBytes("Loser"), Bytes.toBytes("id")));
 
             if (appearedOnce.contains(playerId)) {
-                queryResult.add(playerId);
+                tempResult.add(playerId);
                 appearedOnce.remove(playerId);
             }
             else {
-                if (!queryResult.contains(playerId))
+                if (!tempResult.contains(playerId))
                     appearedOnce.add(playerId);
             }
 
@@ -290,37 +332,49 @@ public class HBaseScrabble {
         }
 
         appearedOnce.clear();
-         // here the problem is that when you take the intersection of the lists in the interval 1 to 2
-        // the while cycle exit before updating the finalresult lists (It does only one cycle). Since it is empty this list, the
-        // intersection will give an empty set. In the interval 1 to 2 so It is en error to do it (the intersection), we should just
-        // add the results to finalresults. It is not an error for an interval bigger than 1 to 2 because the finalresults will
-        // be updated in the while loop (at least it do two cycles) and in the case of an empty finalresults list
-        // means that immediately in the first tourney no-one played more than two games, so It is right to have
-        // an empty result at the end.
+        // IF the interval is lower than 2, the finalResult list is not updated in the for cycle.
+        // This because there is only one tournament and so the result of the query is inside tempResult
+        // ELSE take the interesection with the last tempResult
         if (Integer.parseInt(lasttourneyid) - Integer.parseInt(firsttourneyid) < 2)
-            finalResult.addAll(queryResult);
+            finalResult.addAll(tempResult);
         else
-            finalResult.retainAll(queryResult);
+            finalResult.retainAll(tempResult);
 
         return new ArrayList<>(finalResult);
     }
 
+    /**
+     * Query 3: Given a Tourneyid, the query returns the Gameid and the ids of the two participants that
+     * have finished in tie.
+     *
+     * @param tourneyid  The id of the tournament.
+     * @return The list participants that have finished in tie
+     * @throws IOException
+     */
     public List<String> query3(String tourneyid) throws IOException {
-        HTable table = new HTable(config, "ScrabbleGames");
-
-        byte[] startKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(tourneyid)) + "0000000000");
-        byte[] endKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(tourneyid)) + "9999999999");
-        Scan scan = new Scan(startKey, endKey);
-
-        SingleColumnValueFilter f = new SingleColumnValueFilter(Bytes.toBytes("Game"),
-                Bytes.toBytes("tie"),
-                CompareFilter.CompareOp.EQUAL, Bytes.toBytes("True"));
-
+        // Instantiating working lists
         ArrayList<String> queryResult = new ArrayList<>();
 
+        // Getting reference to the table
+        HTable table = new HTable(config, "ScrabbleGames");
+
+        // Setting the interval
+        byte[] startKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(tourneyid)) + "0000000000");
+        byte[] endKey = Bytes.toBytes(String.format("%010d", Integer.parseInt(tourneyid)) + "9999999999");
+
+        // Create the filtering
+        // Select all the rows where tie is equal to True
+        SingleColumnValueFilter f = new SingleColumnValueFilter(Bytes.toBytes("Game"),
+                                                                Bytes.toBytes("tie"),
+                                                                CompareFilter.CompareOp.EQUAL,
+                                                                Bytes.toBytes("True"));
+
+        // Scan all the records between the interval and apply the filter
+        Scan scan = new Scan(startKey, endKey);
         scan.setFilter(f);
         ResultScanner rs = table.getScanner(scan);
 
+        // Kterate over the results
         Result result = rs.next();
         while (result != null && !result.isEmpty()) {
             //String key = Bytes.toString(result.getRow());
@@ -331,7 +385,9 @@ public class HBaseScrabble {
         return queryResult;
     }
 
-
+    /**
+     * MAIN CLASS
+     */
     public static void main(String[] args) throws IOException, InterruptedException {
         if (args.length < 2) {
             System.out.println("Error: \n1)ZK_HOST:ZK_PORT, \n2)action [createTable, loadTable, query1, query2, query3], \n3)Extra parameters for loadTables and queries:\n" +
