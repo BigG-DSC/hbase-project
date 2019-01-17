@@ -294,10 +294,11 @@ public class HBaseScrabble {
                 if (!firsttourneyid.equals(currentTourney)) {
                     // The retain takes the intersection of the lists
                     finalResult.retainAll(tempResult);
+                } else {
+                    // Clean the lists
+                    finalResult.addAll(tempResult);
                 }
 
-                // Clean the lists
-                finalResult.addAll(tempResult);
                 tempResult.clear();
                 appearedOnce.clear();
                 // Update to the current tournament
@@ -399,9 +400,9 @@ public class HBaseScrabble {
         }
         //args = new String[4];
         //args[0] = "localhost:2181";
-        //args[1] = "QUERY2B";
+        //args[1] = "QUERY2";
         //args[2] = "1";
-        //args[3] = "3";
+        //args[3] = "5";
         HBaseScrabble hBaseScrabble = new HBaseScrabble(args[0]);
         if (args[1].toUpperCase().equals("CREATETABLE")) {
             long startTime = System.nanoTime();
