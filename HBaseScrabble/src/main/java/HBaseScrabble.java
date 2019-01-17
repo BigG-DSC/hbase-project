@@ -387,7 +387,7 @@ public class HBaseScrabble {
     }
 
     /**
-     * MAIN CLASS
+     * MAIN METHOD
      */
     public static void main(String[] args) throws IOException, InterruptedException {
         if (args.length < 2) {
@@ -398,11 +398,6 @@ public class HBaseScrabble {
                     "\td) If query3: tourneyid.\n  ");
             System.exit(-1);
         }
-        //args = new String[4];
-        //args[0] = "localhost:2181";
-        //args[1] = "QUERY2";
-        //args[2] = "1";
-        //args[3] = "5";
         HBaseScrabble hBaseScrabble = new HBaseScrabble(args[0]);
         if (args[1].toUpperCase().equals("CREATETABLE")) {
             long startTime = System.nanoTime();
